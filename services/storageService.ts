@@ -236,6 +236,17 @@ export const updateAccount = async (account: Account) => {
   await setDoc(doc(db, 'accounts', account.id), { ...account, userId });
 };
 
+// ADICIONE ESTA FUNÇÃO NOVA:
+export const deleteAccount = async (id: string) => {
+  try {
+    // Nota: Em um app real, verificaríamos se há transações vinculadas antes de deletar
+    await deleteDoc(doc(db, 'accounts', id));
+  } catch (error) {
+    console.error("Erro ao deletar conta:", error);
+    throw error;
+  }
+};
+
 // ==========================================
 // CATEGORIAS (COM FILTRO DE USUÁRIO)
 // ==========================================
