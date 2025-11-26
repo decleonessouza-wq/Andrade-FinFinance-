@@ -1,5 +1,17 @@
 import React from 'react';
-import { LayoutDashboard, PieChart, Wallet, Target, CreditCard, BarChart3, TrendingDown, LogOut, X } from 'lucide-react';
+import { 
+  LayoutDashboard,
+  PieChart,
+  Wallet,
+  Target,
+  CreditCard,
+  BarChart3,
+  TrendingDown,
+  LogOut,
+  X,
+  ArrowUpCircle,
+} from 'lucide-react';
+
 import { auth } from '../services/firebaseConfig';
 
 interface SidebarProps {
@@ -7,8 +19,8 @@ interface SidebarProps {
   setCurrentView: (view: string) => void;
   userEmail?: string | null;
   userName?: string | null;
-  isMobileOpen: boolean;        // Nova prop
-  onMobileClose: () => void;    // Nova prop
+  isMobileOpen: boolean;
+  onMobileClose: () => void;
 }
 
 const Sidebar: React.FC<SidebarProps> = ({ 
@@ -23,6 +35,7 @@ const Sidebar: React.FC<SidebarProps> = ({
   const menuItems = [
     { id: 'dashboard', label: 'Visão Geral', icon: <LayoutDashboard size={20} /> },
     { id: 'transactions', label: 'Extrato', icon: <Wallet size={20} /> },
+    { id: 'incomes', label: 'Receitas', icon: <ArrowUpCircle size={20} /> },
     { id: 'expenses', label: 'Despesas', icon: <TrendingDown size={20} /> },
     { id: 'budgets', label: 'Orçamentos', icon: <PieChart size={20} /> },
     { id: 'reports', label: 'Relatórios', icon: <BarChart3 size={20} /> },
@@ -38,10 +51,9 @@ const Sidebar: React.FC<SidebarProps> = ({
 
   const handleNavigation = (id: string) => {
     setCurrentView(id);
-    onMobileClose(); // Fecha o menu ao clicar em um item no celular
+    onMobileClose();
   };
 
-  // Componente interno para reutilizar a lista de links
   const NavLinks = () => (
     <nav className="flex-1 px-4 py-4 space-y-1 overflow-y-auto custom-scrollbar">
       {menuItems.map((item) => (
@@ -63,7 +75,6 @@ const Sidebar: React.FC<SidebarProps> = ({
     </nav>
   );
 
-  // Componente interno para o perfil do usuário
   const UserProfile = () => (
     <div className="p-4 border-t border-gray-100 mt-auto">
        <div className="flex items-center justify-between p-3 rounded-xl bg-gray-50 border border-gray-100">
@@ -89,7 +100,7 @@ const Sidebar: React.FC<SidebarProps> = ({
 
   return (
     <>
-      {/* --- SIDEBAR DESKTOP (Fixo na esquerda) --- */}
+      {/* SIDEBAR DESKTOP */}
       <div className="hidden md:flex flex-col w-64 bg-white border-r border-gray-200 h-screen sticky top-0 z-20">
         <div className="p-6 flex items-center space-x-3">
           <img src="/logo.png" alt="Logo" className="w-10 h-10 object-contain rounded-lg" />
@@ -102,9 +113,7 @@ const Sidebar: React.FC<SidebarProps> = ({
         <UserProfile />
       </div>
 
-      {/* --- SIDEBAR MOBILE (Drawer deslizante) --- */}
-      
-      {/* Fundo Escuro (Backdrop) */}
+      {/* BACKDROP MOBILE */}
       {isMobileOpen && (
         <div 
           className="fixed inset-0 bg-black/50 backdrop-blur-sm z-40 md:hidden transition-opacity"
@@ -112,7 +121,7 @@ const Sidebar: React.FC<SidebarProps> = ({
         />
       )}
 
-      {/* Gaveta Lateral */}
+      {/* DRAWER MOBILE */}
       <div className={`fixed top-0 left-0 bottom-0 w-72 bg-white z-50 transform transition-transform duration-300 ease-out md:hidden shadow-2xl flex flex-col ${
         isMobileOpen ? 'translate-x-0' : '-translate-x-full'
       }`}>
