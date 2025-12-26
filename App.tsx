@@ -122,6 +122,7 @@ const App: React.FC = () => {
             <button
               onClick={() => setIsMobileMenuOpen(true)}
               className="p-2 border border-emerald-100 rounded-lg text-emerald-600 hover:bg-emerald-50 active:scale-95 transition-all"
+              aria-label="Abrir menu principal"
             >
               <Menu size={20} />
             </button>
@@ -151,6 +152,7 @@ const App: React.FC = () => {
         <button
           onClick={handleNewTransaction}
           className="fixed bottom-6 right-6 md:bottom-8 md:right-8 z-40 bg-emerald-600 hover:bg-emerald-700 text-white rounded-full w-14 h-14 flex items-center justify-center shadow-xl shadow-emerald-400/40 active:scale-95 transition-all"
+          aria-label="Adicionar nova transação"
         >
           <Plus size={24} />
         </button>
