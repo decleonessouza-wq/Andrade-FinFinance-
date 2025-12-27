@@ -91,7 +91,12 @@ const Sidebar: React.FC<SidebarProps> = ({
               </span>
             </div>
           </div>
-          <button onClick={handleLogout} className="text-gray-400 hover:text-red-500 p-2 hover:bg-white rounded-lg transition-all" title="Sair">
+          <button 
+            onClick={handleLogout} 
+            className="text-gray-400 hover:text-red-500 p-2 hover:bg-white rounded-lg transition-all" 
+            title="Sair"
+            aria-label="Sair da conta"
+          >
             <LogOut size={18} />
           </button>
        </div>
@@ -130,7 +135,12 @@ const Sidebar: React.FC<SidebarProps> = ({
               <img src="/logo.png" alt="Logo" className="w-8 h-8 object-contain" />
               <span className="font-bold text-gray-800 text-lg">Menu</span>
            </div>
-           <button onClick={onMobileClose} className="p-2 bg-gray-50 rounded-full text-gray-500 hover:text-gray-900">
+           {/* CORREÇÃO AQUI: Adicionado aria-label para acessibilidade */}
+           <button 
+             onClick={onMobileClose} 
+             className="p-2 bg-gray-50 rounded-full text-gray-500 hover:text-gray-900"
+             aria-label="Fechar menu"
+           >
               <X size={20} />
            </button>
         </div>

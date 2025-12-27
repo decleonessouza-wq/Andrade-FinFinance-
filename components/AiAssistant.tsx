@@ -1,136 +1,290 @@
-import React, { useState, useRef, useEffect } from 'react';
-import { Sparkles, X, Send, MessageCircle } from 'lucide-react';
-import { sendMessageToAssistant, ChatMessage } from '../services/aiService';
-import { calculateBalances, getExpensesByCategory } from '../services/storageService';
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import { X, Send, Sparkles, AlertTriangle, Loader2 } from "lucide-react";
+import { sendMessageToAssistant, ChatMessage } from "../services/aiService";
+import { calculateBalances, getAccounts, getCategories, getTransactions } from "../services/storageService";
+import { AccountType, TransactionType } from "../types";
+
+type UiMessage = {
+  id: string;
+  role: "user" | "assistant";
+  text: string;
+  createdAt: string;
+};
+
+const formatBRL = (value: number) =>
+  value.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 
 const AiAssistant: React.FC = () => {
-  const [isOpen, setIsOpen] = useState(false);
-  const [input, setInput] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
-  const [messages, setMessages] = useState<ChatMessage[]>([
-    { role: 'model', text: 'Olá! Sou o FinBot, seu assistente financeiro. Como posso te ajudar hoje? 🤖💰' }
+  const [open, setOpen] = useState(false);
+  const [sending, setSending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const [input, setInput] = useState("");
+  const [messages, setMessages] = useState<UiMessage[]>([
+    {
+      id: "welcome",
+      role: "assistant",
+      text: "Olá! Sou o **Andrade Assistente**. Posso te ajudar com orçamento, despesas, receitas e planejamento. Como posso ajudar hoje? 💸✅",
+      createdAt: new Date().toISOString(),
+    },
   ]);
-  
-  const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  };
+  const scrollRef = useRef<HTMLDivElement | null>(null);
 
-  useEffect(() => {
-    scrollToBottom();
-  }, [messages, isOpen]);
+  const [context, setContext] = useState<string>("");
 
-  const handleSend = async (e?: React.FormEvent) => {
-    e?.preventDefault();
-    if (!input.trim() || isLoading) return;
-
-    const userText = input;
-    setInput('');
-    
-    // Add User Message
-    const newHistory: ChatMessage[] = [...messages, { role: 'user', text: userText }];
-    setMessages(newHistory);
-    setIsLoading(true);
-
+  const loadContext = async () => {
     try {
-      // Prepare Context (Agora com AWAIT)
-      const balances = await calculateBalances();
-      const categories = await getExpensesByCategory();
-      const topCategory = categories.length > 0 ? `${categories[0].name} (R$ ${categories[0].value})` : 'Nenhuma';
+      const [balances, accounts, categories, txs] = await Promise.all([
+        calculateBalances(),
+        getAccounts(),
+        getCategories(),
+        getTransactions(),
+      ]);
 
-      const context = `
-        CONTEXTO ATUAL DO USUÁRIO:
-        - Saldo Total: R$ ${balances.realBalance}
-        - Receita Mês: R$ ${balances.monthlyIncome}
-        - Despesa Mês: R$ ${balances.monthlyExpense}
-        - Maior gasto: ${topCategory}
-      `;
+      const totalAccounts = accounts.length;
+      const totalWallets = accounts.filter((a) => a.type !== AccountType.CREDIT_CARD).length;
+      const totalCards = accounts.filter((a) => a.type === AccountType.CREDIT_CARD).length;
 
-      const responseText = await sendMessageToAssistant(userText, newHistory, context);
-      
-      setMessages(prev => [...prev, { role: 'model', text: responseText }]);
-    } catch (error) {
-      setMessages(prev => [...prev, { role: 'model', text: 'Desculpe, tive um erro ao processar sua mensagem.' }]);
-    } finally {
-      setIsLoading(false);
+      const now = new Date();
+      const monthTxs = txs.filter((t) => {
+        const d = new Date(t.date);
+        return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
+      });
+
+      const paidMonthIncome = monthTxs
+        .filter((t) => t.isPaid && t.type === TransactionType.INCOME)
+        .reduce((s, t) => s + t.value, 0);
+
+      const paidMonthExpense = monthTxs
+        .filter((t) => t.isPaid && t.type === TransactionType.EXPENSE)
+        .reduce((s, t) => s + t.value, 0);
+
+      const topCats = new Map<string, number>();
+      monthTxs
+        .filter((t) => t.isPaid && t.type === TransactionType.EXPENSE)
+        .forEach((t) => topCats.set(t.categoryId, (topCats.get(t.categoryId) || 0) + t.value));
+
+      const top3 = Array.from(topCats.entries())
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 3)
+        .map(([catId, value]) => {
+          const name = categories.find((c) => c.id === catId)?.name || "Categoria";
+          return `- ${name}: ${formatBRL(value)}`;
+        });
+
+      const lines: string[] = [];
+      lines.push(`Resumo atual do app:`);
+      lines.push(
+        `- Contas/Carteiras cadastradas: ${totalAccounts} (Carteiras/contas: ${totalWallets} | Cartões: ${totalCards})`
+      );
+      lines.push(`- Saldo real (sem cartão): ${formatBRL(balances.realBalance)}`);
+      lines.push(`- Saldo projetado (considerando cartão): ${formatBRL(balances.projectedBalance)}`);
+      lines.push(`- Receitas pagas no mês: ${formatBRL(paidMonthIncome)}`);
+      lines.push(`- Despesas pagas no mês: ${formatBRL(paidMonthExpense)}`);
+      if (top3.length) {
+        lines.push(`- Top despesas do mês:`);
+        lines.push(...top3);
+      }
+
+      setContext(lines.join("\n"));
+    } catch {
+      setContext("");
     }
   };
 
-  // Render (Mantido igual)
+  useEffect(() => {
+    if (open) loadContext();
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    const el = scrollRef.current;
+    if (!el) return;
+    el.scrollTop = el.scrollHeight;
+  }, [open, messages.length]);
+
+  // ✅ História para o modelo SEMPRE começa com USER
+  const historyForModel = useMemo<ChatMessage[]>(() => {
+    const last = messages.slice(-12).map((m) => ({
+      role: m.role === "assistant" ? ("model" as const) : ("user" as const),
+      text: m.text.replace(/\*\*/g, ""),
+    }));
+
+    const firstUserIndex = last.findIndex((m) => m.role === "user");
+    if (firstUserIndex === -1) return []; // sem user => sem history
+    return last.slice(firstUserIndex);
+  }, [messages]);
+
+  const handleSend = async () => {
+    const text = input.trim();
+    if (!text || sending) return;
+
+    setError(null);
+    setSending(true);
+    setInput("");
+
+    const userMsg: UiMessage = {
+      id: crypto.randomUUID(),
+      role: "user",
+      text,
+      createdAt: new Date().toISOString(),
+    };
+
+    // adiciona na UI primeiro
+    setMessages((prev) => [...prev, userMsg]);
+
+    try {
+      const reply = await sendMessageToAssistant(text, historyForModel, context);
+
+      const assistantMsg: UiMessage = {
+        id: crypto.randomUUID(),
+        role: "assistant",
+        text: reply,
+        createdAt: new Date().toISOString(),
+      };
+      setMessages((prev) => [...prev, assistantMsg]);
+    } catch (e: any) {
+      const msg =
+        e?.message ||
+        "Desculpe, estou tendo dificuldades técnicas no momento. Verifique sua conexão e tente novamente.";
+      setError(msg);
+
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: crypto.randomUUID(),
+          role: "assistant",
+          text: "Desculpe, estou tendo dificuldades técnicas no momento. Verifique sua conexão.",
+          createdAt: new Date().toISOString(),
+        },
+      ]);
+    } finally {
+      setSending(false);
+    }
+  };
+
+  const onKeyDown: React.KeyboardEventHandler<HTMLInputElement> = (e) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      handleSend();
+    }
+  };
+
   return (
     <>
-      {!isOpen && (
-        <button 
-          onClick={() => setIsOpen(true)}
-          className="fixed bottom-24 md:bottom-10 left-5 md:left-auto md:right-32 bg-gray-900 text-white p-4 rounded-full shadow-2xl hover:scale-105 transition-all z-40 group border border-gray-700"
-        >
-          <Sparkles size={24} className="group-hover:text-brand-400 transition-colors" />
-          <span className="absolute -top-2 -right-2 w-4 h-4 bg-red-500 rounded-full animate-pulse"></span>
-        </button>
-      )}
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className="fixed bottom-24 right-6 z-40 rounded-full w-14 h-14 bg-emerald-600 hover:bg-emerald-700 text-white shadow-xl shadow-emerald-200 flex items-center justify-center transition-all"
+        aria-label="Abrir Andrade Assistente"
+        title="Andrade Assistente"
+      >
+        <Sparkles size={22} />
+      </button>
 
-      {isOpen && (
-        <div className="fixed bottom-0 right-0 md:bottom-24 md:right-10 w-full md:w-[400px] h-[80vh] md:h-[600px] bg-white md:rounded-3xl shadow-2xl border border-gray-200 z-50 flex flex-col animate-slide-in-up">
-          {/* Header */}
-          <div className="p-4 border-b border-gray-100 flex justify-between items-center bg-gray-50 md:rounded-t-3xl">
-             <div className="flex items-center space-x-2">
-                <div className="w-8 h-8 bg-brand-600 rounded-full flex items-center justify-center text-white">
-                   <Sparkles size={16} />
-                </div>
-                <div>
-                   <h3 className="font-bold text-gray-900 text-sm">FinBot AI</h3>
-                   <p className="text-[10px] text-brand-600 font-medium">Online</p>
-                </div>
-             </div>
-             <button onClick={() => setIsOpen(false)} className="text-gray-400 hover:text-gray-600">
-                <X size={20} />
-             </button>
-          </div>
+      {open && (
+        <div className="fixed inset-0 z-50">
+          <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={() => setOpen(false)} />
 
-          {/* Messages */}
-          <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-white/50">
-            {messages.map((msg, idx) => (
-              <div key={idx} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                <div className={`max-w-[80%] p-3.5 rounded-2xl text-sm leading-relaxed ${
-                  msg.role === 'user' 
-                    ? 'bg-brand-600 text-white rounded-tr-none' 
-                    : 'bg-gray-100 text-gray-800 rounded-tl-none border border-gray-200'
-                }`}>
-                  {msg.text}
+          <div
+            className="
+              absolute right-4 md:right-6 top-4 md:top-6 bottom-4 md:bottom-6
+              w-[calc(100%-2rem)] md:w-[420px]
+              bg-white rounded-3xl shadow-2xl border border-gray-200
+              flex flex-col overflow-hidden
+              animate-fade-in
+            "
+            role="dialog"
+            aria-modal="true"
+          >
+            <div className="p-4 md:p-5 border-b border-gray-100 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-emerald-50 text-emerald-700 flex items-center justify-center">
+                  <Sparkles size={18} />
+                </div>
+                <div className="leading-tight">
+                  <div className="font-extrabold text-gray-900">Andrade Assistente</div>
+                  <div className="text-xs text-emerald-600 font-semibold">Online</div>
                 </div>
               </div>
-            ))}
-            {isLoading && (
-              <div className="flex justify-start">
-                <div className="bg-white p-4 rounded-2xl rounded-tl-none border border-gray-100 shadow-sm flex items-center space-x-1.5">
-                  <div className="w-2 h-2 bg-gray-400 rounded-full typing-dot"></div>
-                  <div className="w-2 h-2 bg-gray-400 rounded-full typing-dot"></div>
-                  <div className="w-2 h-2 bg-gray-400 rounded-full typing-dot"></div>
-                </div>
+
+              <button
+                type="button"
+                onClick={() => setOpen(false)}
+                className="p-2 rounded-full hover:bg-gray-100 transition-colors"
+                aria-label="Fechar"
+                title="Fechar"
+              >
+                <X className="text-gray-500" />
+              </button>
+            </div>
+
+            {context && (
+              <div className="px-4 md:px-5 py-3 bg-emerald-50/60 border-b border-emerald-100">
+                <div className="text-[11px] text-emerald-900 font-bold mb-1">Contexto do app (auto)</div>
+                <pre className="text-[11px] text-emerald-900/90 whitespace-pre-wrap leading-relaxed">{context}</pre>
               </div>
             )}
-            <div ref={messagesEndRef} />
-          </div>
 
-          {/* Input Area */}
-          <form onSubmit={handleSend} className="p-3 bg-white border-t border-gray-100 flex items-center space-x-2">
-            <input
-              type="text"
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              placeholder="Pergunte sobre suas finanças..."
-              className="flex-1 bg-gray-100 border-0 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-brand-500 outline-none transition-all placeholder-gray-400"
-              disabled={isLoading}
-            />
-            <button 
-              type="submit" 
-              disabled={!input.trim() || isLoading}
-              className="bg-brand-600 text-white p-3 rounded-xl hover:bg-brand-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+            <div
+              ref={scrollRef}
+              className="flex-1 p-4 md:p-5 overflow-y-auto space-y-3 bg-gradient-to-b from-white to-emerald-50/40"
             >
-              <Send size={18} />
-            </button>
-          </form>
+              {messages.map((m) => (
+                <div key={m.id} className={`flex ${m.role === "user" ? "justify-end" : "justify-start"}`}>
+                  <div
+                    className={`
+                      max-w-[85%] rounded-2xl px-4 py-3 text-sm leading-relaxed shadow-sm
+                      ${m.role === "user" ? "bg-emerald-600 text-white" : "bg-white border border-gray-100 text-gray-800"}
+                    `}
+                  >
+                    <span
+                      dangerouslySetInnerHTML={{
+                        __html: m.text
+                          .replace(/</g, "&lt;")
+                          .replace(/>/g, "&gt;")
+                          .replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>")
+                          .replace(/\n/g, "<br/>"),
+                      }}
+                    />
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {error && (
+              <div className="px-4 md:px-5 py-3 border-t border-gray-100 bg-red-50 text-red-700 text-sm flex items-start gap-2">
+                <AlertTriangle size={18} className="mt-0.5" />
+                <div>{error}</div>
+              </div>
+            )}
+
+            <div className="p-4 md:p-5 border-t border-gray-100 bg-white">
+              <div className="flex gap-2">
+                <input
+                  value={input}
+                  onChange={(e) => setInput(e.target.value)}
+                  onKeyDown={onKeyDown}
+                  placeholder="Pergunte sobre suas finanças..."
+                  className="flex-1 px-4 py-3 rounded-2xl border border-emerald-200 focus:ring-2 focus:ring-emerald-500 outline-none transition-all"
+                />
+                <button
+                  type="button"
+                  onClick={handleSend}
+                  disabled={sending || !input.trim()}
+                  className="w-12 h-12 rounded-2xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 disabled:hover:bg-emerald-600 text-white flex items-center justify-center shadow-lg shadow-emerald-200 transition-all"
+                  aria-label="Enviar"
+                  title="Enviar"
+                >
+                  {sending ? <Loader2 className="animate-spin" size={18} /> : <Send size={18} />}
+                </button>
+              </div>
+              <div className="text-[11px] text-gray-400 mt-2">
+                Dica: peça “como cortar gastos”, “quanto guardar por mês”, “organize meu orçamento”.
+              </div>
+            </div>
+          </div>
         </div>
       )}
     </>

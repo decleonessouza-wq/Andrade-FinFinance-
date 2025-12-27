@@ -38,6 +38,11 @@ const convertDoc = <T>(docSnap: any): T => {
   return { id: docSnap.id, ...docSnap.data() } as T;
 };
 
+// ✅ Helper: valida ID "padrão Firestore" (auto-id costuma ter 20 chars)
+const isFirestoreLikeId = (id?: string) => {
+  return typeof id === 'string' && id.length === 20;
+};
+
 // ==========================================
 // DADOS INICIAIS (SEED)
 // ==========================================
@@ -226,14 +231,53 @@ export const getAccounts = async (): Promise<Account[]> => {
   }
 };
 
+// ✅ Agora cria com ID do Firestore quando precisar (evita erro de permissions)
 export const addAccount = async (account: Account) => {
   const userId = getCurrentUserId();
-  await setDoc(doc(db, 'accounts', account.id), { ...account, userId });
+
+  // Se vier com ID "não Firestore" (ex: uuid 36 chars), geramos um ID Firestore (20 chars)
+  const shouldGenerateId = !isFirestoreLikeId(account.id);
+
+  if (shouldGenerateId) {
+    const newRef = doc(collection(db, 'accounts'));
+    const payload = { ...account, id: newRef.id, userId };
+    await setDoc(newRef, payload);
+    return;
+  }
+
+  // Se o ID já for compatível, salva no ID informado
+  await setDoc(doc(db, 'accounts', account.id), { ...account, id: account.id, userId });
 };
 
+// ✅ Upsert seguro: se não existir, cria com ID Firestore; se existir, atualiza normalmente
 export const updateAccount = async (account: Account) => {
   const userId = getCurrentUserId();
-  await setDoc(doc(db, 'accounts', account.id), { ...account, userId });
+
+  try {
+    const hasGoodId = isFirestoreLikeId(account.id);
+
+    if (hasGoodId) {
+      const accRef = doc(db, 'accounts', account.id);
+      const snap = await getDoc(accRef);
+
+      if (snap.exists()) {
+        // Atualiza mantendo mesmo ID
+        await setDoc(accRef, { ...account, id: account.id, userId });
+        return;
+      }
+
+      // Se não existe ainda, cria com esse id (já compatível)
+      await setDoc(accRef, { ...account, id: account.id, userId });
+      return;
+    }
+
+    // Se o ID não for compatível (uuid, acc_...), cria com ID Firestore
+    const newRef = doc(collection(db, 'accounts'));
+    await setDoc(newRef, { ...account, id: newRef.id, userId });
+  } catch (error) {
+    console.error("Erro ao salvar conta:", error);
+    throw error;
+  }
 };
 
 // ADICIONE ESTA FUNÇÃO NOVA:

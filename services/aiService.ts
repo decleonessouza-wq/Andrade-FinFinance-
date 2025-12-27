@@ -1,70 +1,105 @@
+// services/aiService.ts
 import { GoogleGenAI } from "@google/genai";
 
-// Initialize Gemini Client
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-
-export interface ChatMessage {
-  role: 'user' | 'model';
+export type ChatMessage = {
+  role: "user" | "model";
   text: string;
+};
+
+// Lê do Vite env (frontend)
+const API_KEY = (import.meta as any).env?.VITE_GEMINI_API_KEY as string | undefined;
+
+// Modelo padrão (você pode trocar via .env.local -> VITE_GEMINI_MODEL)
+const MODEL =
+  ((import.meta as any).env?.VITE_GEMINI_MODEL as string | undefined) || "gemini-2.0-flash";
+
+function requireApiKey() {
+  if (!API_KEY || !API_KEY.trim()) {
+    throw new Error(
+      "Chave Gemini não encontrada. Configure VITE_GEMINI_API_KEY no arquivo .env.local e reinicie o servidor."
+    );
+  }
 }
 
-/**
- * Generates a response from Gemini, considering the user's financial context.
- */
-export const sendMessageToAssistant = async (
-  history: ChatMessage[],
-  userMessage: string,
-  financialContext: string
-): Promise<string> => {
+function normalizeHistory(history: ChatMessage[]): { role: "user" | "model"; parts: { text: string }[] }[] {
+  // Gemini exige que o PRIMEIRO content seja role "user".
+  // Então removemos mensagens iniciais do tipo "model" (ex: boas-vindas).
+  const cleaned = [...(history || [])]
+    .map((m) => ({
+      role: m.role,
+      parts: [{ text: (m.text || "").toString() }],
+    }))
+    .filter((m) => m.parts[0].text.trim().length > 0);
+
+  while (cleaned.length && cleaned[0].role !== "user") cleaned.shift();
+
+  return cleaned;
+}
+
+function extractTextFromResponse(resp: any): string {
+  // SDK novo pode retornar estruturas diferentes; vamos extrair de forma robusta
+  if (!resp) return "";
+  if (typeof resp.text === "string") return resp.text;
+  if (typeof resp.text === "function") return resp.text();
+
+  const cand = resp.candidates?.[0];
+  const parts = cand?.content?.parts;
+  const text = parts?.map((p: any) => p?.text).filter(Boolean).join("\n");
+  return text || "";
+}
+
+const SYSTEM_INSTRUCTION = `
+Você é o Andrade Assistente, um assistente financeiro pessoal e familiar.
+Regras:
+- Responda em PT-BR.
+- Seja prático, direto e cordial.
+- Quando faltar dados, faça perguntas objetivas.
+- Sugira passos e opções (orçamento, corte de gastos, dívidas, metas, reserva de emergência).
+- Se envolver números, mostre o cálculo.
+- Não invente informações do usuário. Use apenas o contexto fornecido.
+`;
+
+export async function sendMessageToAssistant(
+  userText: string,
+  history: ChatMessage[] = [],
+  context: string = ""
+): Promise<string> {
+  requireApiKey();
+
+  const ai = new GoogleGenAI({ apiKey: API_KEY! });
+
+  const cleanedHistory = normalizeHistory(history);
+
+  const prompt =
+    (context?.trim()
+      ? `Contexto do app (use como referência):\n${context.trim()}\n\n`
+      : "") + `Pergunta do usuário:\n${userText}`;
+
+  const contents = [
+    ...cleanedHistory,
+    { role: "user" as const, parts: [{ text: prompt }] },
+  ];
+
   try {
-    const systemPrompt = `
-      Você é o FinBot, o assistente virtual inteligente do aplicativo "AndradeFinance".
-      
-      SOBRE O APP:
-      - O AndradeFinance é um hub de controle financeiro familiar.
-      - Funcionalidades principais: Projeção de Saldo (prevê o futuro baseado em contas a pagar), Smart Input (categorização automática), Gestão de Cartão de Crédito (fatura atual vs próxima) e Metas.
-      - O design é moderno e em tons de verde.
-      
-      SEU PAPEL:
-      - Ajudar o usuário a navegar no app.
-      - Fornecer conselhos financeiros baseados no contexto fornecido.
-      - Explicar conceitos como "Fluxo de Caixa" ou "Reserva de Emergência".
-      - Ser educado, motivador e conciso. Use emojis ocasionalmente.
-      
-      CONTEXTO FINANCEIRO ATUAL DO USUÁRIO:
-      ${financialContext}
-      
-      Responda à pergunta do usuário considerando esse contexto. Se ele perguntar "Como estou esse mês?", use os números fornecidos.
-      Não invente dados. Se não souber, sugira onde ver no app.
-    `;
-
-    // Map history to the format Gemini expects (if using chat, but for simple generateContent with context, we can just append)
-    // For simplicity in this implementation, we will concatenate history into a single prompt block or use the chat structure if preferred.
-    // Let's use a fresh generateContent call with the context + history to ensure stateless simplicity for now, 
-    // or we can use a chat session if we wanted to maintain it. 
-    // Given the constraints, a single robust prompt is often safer and stateless.
-
-    let conversationLog = history.map(msg => `${msg.role === 'user' ? 'Usuário' : 'FinBot'}: ${msg.text}`).join('\n');
-
-    const prompt = `
-      ${systemPrompt}
-
-      HISTÓRICO DA CONVERSA:
-      ${conversationLog}
-      
-      Usuário: ${userMessage}
-      FinBot:
-    `;
-
-    const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
-      contents: prompt,
+    const resp = await ai.models.generateContent({
+      model: MODEL,
+      contents,
+      config: {
+        systemInstruction: SYSTEM_INSTRUCTION.trim(),
+        temperature: 0.7,
+        maxOutputTokens: 600,
+      },
     });
 
-    return response.text || "Desculpe, não consegui processar sua resposta no momento.";
+    const text = extractTextFromResponse(resp)?.trim();
+    return text || "Não consegui gerar uma resposta agora. Tente novamente.";
+  } catch (err: any) {
+    // Erro mais legível
+    const msg =
+      err?.message ||
+      err?.toString?.() ||
+      "Falha ao chamar o Gemini. Verifique a chave e as permissões.";
 
-  } catch (error) {
-    console.error("Error calling Gemini:", error);
-    return "Estou tendo dificuldades para conectar ao servidor de inteligência agora. Por favor, tente novamente mais tarde.";
+    throw new Error(msg);
   }
-};
+}
