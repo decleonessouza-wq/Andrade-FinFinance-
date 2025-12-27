@@ -130,7 +130,6 @@ const AccountsView: React.FC = () => {
         ? (crypto as any).randomUUID()
         : `acc_${Date.now()}`;
 
-    // ✅ Inclui userId/uid (regras do Firestore geralmente exigem isso)
     const baseAccount: any = {
       id,
       name,
@@ -139,7 +138,6 @@ const AccountsView: React.FC = () => {
       userId: user.uid
     };
 
-    // Se for cartão, adiciona fechamento/vencimento
     const createdAccount: any =
       newType === AccountType.CREDIT_CARD
         ? {
@@ -150,6 +148,7 @@ const AccountsView: React.FC = () => {
         : baseAccount;
 
     try {
+      // Mantive updateAccount como você já está usando (setDoc)
       await updateAccount(createdAccount as Account);
       setIsCreateOpen(false);
       loadAccounts();
@@ -159,16 +158,17 @@ const AccountsView: React.FC = () => {
     }
   };
 
-  const getIcon = (type: AccountType) => {
+  // ✅ Agora o ícone recebe size e className (remove cloneElement e corrige TS)
+  const getIcon = (type: AccountType, size: number = 24, className: string = 'text-white') => {
     switch (type) {
       case AccountType.CREDIT_CARD:
-        return <CreditCard className="text-white" />;
+        return <CreditCard size={size} className={className} />;
       case AccountType.INVESTMENT:
-        return <TrendingUp className="text-white" />;
+        return <TrendingUp size={size} className={className} />;
       case AccountType.CHECKING:
-        return <Landmark className="text-white" />;
+        return <Landmark size={size} className={className} />;
       default:
-        return <Wallet className="text-white" />;
+        return <Wallet size={size} className={className} />;
     }
   };
 
@@ -199,9 +199,13 @@ const AccountsView: React.FC = () => {
           <h1 className="text-2xl font-bold text-gray-900">Minhas Carteiras</h1>
           <p className="text-sm text-gray-500">Toque em uma conta para editar</p>
         </div>
+
         <button
+          type="button"
           onClick={handleOpenCreate}
           className="flex items-center space-x-2 bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-xl text-sm font-bold shadow-lg shadow-emerald-200 transition-all"
+          aria-label="Adicionar nova carteira"
+          title="Adicionar nova carteira"
         >
           <Plus size={18} />
           <span>Adicionar</span>
@@ -215,6 +219,13 @@ const AccountsView: React.FC = () => {
             key={account.id}
             onClick={() => handleCardClick(account)}
             className="bg-white p-6 rounded-3xl shadow-lg border border-gray-100 hover:border-emerald-400 hover:shadow-xl hover:-translate-y-1 transition-all group cursor-pointer relative overflow-hidden"
+            role="button"
+            tabIndex={0}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') handleCardClick(account);
+            }}
+            aria-label={`Abrir edição da conta ${account.name}`}
+            title={`Editar ${account.name}`}
           >
             <div className="absolute top-4 right-4 opacity-0 group-hover:opacity-100 transition-opacity text-emerald-500 text-xs font-bold">
               Editar
@@ -223,7 +234,7 @@ const AccountsView: React.FC = () => {
             <div className="flex justify-between items-start mb-6 relative z-10">
               <div className="flex items-center space-x-4">
                 <div className={`p-3.5 rounded-2xl shadow-md ${getBgColor(account.type)}`}>
-                  {getIcon(account.type)}
+                  {getIcon(account.type, 24, 'text-white')}
                 </div>
                 <div>
                   <h3 className="font-bold text-gray-900 text-lg">{account.name}</h3>
@@ -272,9 +283,13 @@ const AccountsView: React.FC = () => {
                 </div>
                 <h3 className="font-bold text-xl text-gray-900">Nova Carteira</h3>
               </div>
+
               <button
+                type="button"
                 onClick={() => setIsCreateOpen(false)}
                 className="p-2 hover:bg-gray-100 rounded-full transition-colors"
+                aria-label="Fechar modal de criação"
+                title="Fechar"
               >
                 <X size={24} className="text-gray-500" />
               </button>
@@ -282,23 +297,35 @@ const AccountsView: React.FC = () => {
 
             <form onSubmit={handleCreateAccount} className="space-y-5">
               <div>
-                <label className="block text-xs font-bold text-gray-500 mb-1.5 ml-1">
+                <label
+                  htmlFor="newAccountName"
+                  className="block text-xs font-bold text-gray-500 mb-1.5 ml-1"
+                >
                   Nome da Carteira
                 </label>
                 <input
+                  id="newAccountName"
                   type="text"
                   value={newName}
                   onChange={(e) => setNewName(e.target.value)}
                   placeholder="Ex: Nubank, Carteira Física..."
+                  aria-label="Nome da carteira"
                   className="w-full p-4 bg-gray-50 border border-gray-200 rounded-xl font-bold text-gray-800 outline-none focus:ring-2 focus:ring-emerald-500 focus:bg-white transition-all"
                 />
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-gray-500 mb-1.5 ml-1">Tipo</label>
+                <label
+                  htmlFor="newAccountType"
+                  className="block text-xs font-bold text-gray-500 mb-1.5 ml-1"
+                >
+                  Tipo
+                </label>
                 <select
+                  id="newAccountType"
                   value={newType}
                   onChange={(e) => setNewType(e.target.value as AccountType)}
+                  aria-label="Tipo da carteira"
                   className="w-full p-4 bg-gray-50 border border-gray-200 rounded-xl font-bold text-gray-800 outline-none focus:ring-2 focus:ring-emerald-500 focus:bg-white transition-all"
                 >
                   <option value={AccountType.CASH}>CASH</option>
@@ -309,7 +336,10 @@ const AccountsView: React.FC = () => {
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-gray-500 mb-1.5 ml-1">
+                <label
+                  htmlFor="newAccountBalance"
+                  className="block text-xs font-bold text-gray-500 mb-1.5 ml-1"
+                >
                   Saldo Inicial
                 </label>
                 <div className="relative">
@@ -317,10 +347,12 @@ const AccountsView: React.FC = () => {
                     R$
                   </span>
                   <input
+                    id="newAccountBalance"
                     type="number"
                     step="0.01"
                     value={newBalance}
                     onChange={(e) => setNewBalance(e.target.value)}
+                    aria-label="Saldo inicial"
                     className="w-full pl-12 p-4 bg-gray-50 border border-gray-200 rounded-xl font-bold text-xl text-gray-900 outline-none focus:ring-2 focus:ring-emerald-500 focus:bg-white transition-all"
                   />
                 </div>
@@ -333,28 +365,39 @@ const AccountsView: React.FC = () => {
               {newType === AccountType.CREDIT_CARD && (
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="block text-xs font-bold text-gray-500 mb-1.5 ml-1">
+                    <label
+                      htmlFor="newClosingDay"
+                      className="block text-xs font-bold text-gray-500 mb-1.5 ml-1"
+                    >
                       Fechamento
                     </label>
                     <input
+                      id="newClosingDay"
                       type="number"
                       min={1}
                       max={31}
                       value={newClosingDay}
                       onChange={(e) => setNewClosingDay(e.target.value)}
+                      aria-label="Dia de fechamento"
                       className="w-full p-4 bg-gray-50 border border-gray-200 rounded-xl font-bold text-gray-800 outline-none focus:ring-2 focus:ring-emerald-500 focus:bg-white transition-all"
                     />
                   </div>
+
                   <div>
-                    <label className="block text-xs font-bold text-gray-500 mb-1.5 ml-1">
+                    <label
+                      htmlFor="newDueDay"
+                      className="block text-xs font-bold text-gray-500 mb-1.5 ml-1"
+                    >
                       Vencimento
                     </label>
                     <input
+                      id="newDueDay"
                       type="number"
                       min={1}
                       max={31}
                       value={newDueDay}
                       onChange={(e) => setNewDueDay(e.target.value)}
+                      aria-label="Dia de vencimento"
                       className="w-full p-4 bg-gray-50 border border-gray-200 rounded-xl font-bold text-gray-800 outline-none focus:ring-2 focus:ring-emerald-500 focus:bg-white transition-all"
                     />
                   </div>
@@ -364,6 +407,8 @@ const AccountsView: React.FC = () => {
               <button
                 type="submit"
                 className="w-full py-3.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl shadow-lg shadow-emerald-200 transition-all flex items-center justify-center space-x-2"
+                aria-label="Salvar carteira"
+                title="Salvar carteira"
               >
                 <Save size={20} />
                 <span>Salvar Carteira</span>
@@ -380,15 +425,17 @@ const AccountsView: React.FC = () => {
             <div className="flex justify-between items-center mb-6 border-b border-gray-100 pb-4">
               <div className="flex items-center space-x-3">
                 <div className={`p-2 rounded-xl ${getBgColor(selectedAccount.type)}`}>
-                  {React.cloneElement(getIcon(selectedAccount.type) as React.ReactElement, {
-                    size: 18
-                  })}
+                  {getIcon(selectedAccount.type, 18, 'text-white')}
                 </div>
                 <h3 className="font-bold text-xl text-gray-900">Editar Conta</h3>
               </div>
+
               <button
+                type="button"
                 onClick={() => setSelectedAccount(null)}
                 className="p-2 hover:bg-gray-100 rounded-full transition-colors"
+                aria-label="Fechar modal de edição"
+                title="Fechar"
               >
                 <X size={24} className="text-gray-500" />
               </button>
@@ -396,19 +443,28 @@ const AccountsView: React.FC = () => {
 
             <form onSubmit={handleSave} className="space-y-5">
               <div>
-                <label className="block text-xs font-bold text-gray-500 mb-1.5 ml-1">
+                <label
+                  htmlFor="editAccountName"
+                  className="block text-xs font-bold text-gray-500 mb-1.5 ml-1"
+                >
                   Nome da Conta
                 </label>
                 <input
+                  id="editAccountName"
                   type="text"
                   value={editName}
                   onChange={(e) => setEditName(e.target.value)}
+                  placeholder="Nome da conta"
+                  aria-label="Nome da conta"
                   className="w-full p-4 bg-gray-50 border border-gray-200 rounded-xl font-bold text-gray-800 outline-none focus:ring-2 focus:ring-emerald-500 focus:bg-white transition-all"
                 />
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-gray-500 mb-1.5 ml-1">
+                <label
+                  htmlFor="editAccountBalance"
+                  className="block text-xs font-bold text-gray-500 mb-1.5 ml-1"
+                >
                   Saldo Atual
                 </label>
                 <div className="relative">
@@ -416,10 +472,12 @@ const AccountsView: React.FC = () => {
                     R$
                   </span>
                   <input
+                    id="editAccountBalance"
                     type="number"
                     step="0.01"
                     value={editBalance}
                     onChange={(e) => setEditBalance(e.target.value)}
+                    aria-label="Saldo atual"
                     className="w-full pl-12 p-4 bg-gray-50 border border-gray-200 rounded-xl font-bold text-xl text-gray-900 outline-none focus:ring-2 focus:ring-emerald-500 focus:bg-white transition-all"
                   />
                 </div>
@@ -434,6 +492,8 @@ const AccountsView: React.FC = () => {
                   type="button"
                   onClick={handleDelete}
                   className="flex-1 py-3.5 bg-red-50 hover:bg-red-100 text-red-600 font-bold rounded-xl transition-all flex items-center justify-center space-x-2 group"
+                  aria-label="Excluir conta"
+                  title="Excluir conta"
                 >
                   <Trash2 size={20} className="group-hover:scale-110 transition-transform" />
                   <span>Excluir</span>
@@ -442,6 +502,8 @@ const AccountsView: React.FC = () => {
                 <button
                   type="submit"
                   className="flex-[2] py-3.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl shadow-lg shadow-emerald-200 transition-all flex items-center justify-center space-x-2"
+                  aria-label="Salvar alterações"
+                  title="Salvar alterações"
                 >
                   <Save size={20} />
                   <span>Salvar Alterações</span>
