@@ -27,6 +27,23 @@ import {
 // ==========================================
 // HELPERS DE SEGURANÇA
 // ==========================================
+
+// ✅ Remove campos undefined (Firestore não aceita undefined)
+function stripUndefined<T>(obj: T): T {
+  if (Array.isArray(obj)) {
+    return obj.map(stripUndefined) as any;
+  }
+  if (obj && typeof obj === "object") {
+    const out: any = {};
+    Object.entries(obj as any).forEach(([k, v]) => {
+      if (v === undefined) return;
+      out[k] = stripUndefined(v);
+    });
+    return out;
+  }
+  return obj;
+}
+
 const getCurrentUserId = () => {
   const user = auth.currentUser;
   if (!user) throw new Error("Usuário não autenticado. Faça login novamente.");
@@ -123,7 +140,7 @@ export const initializeDataIfNeeded = async () => {
 
       INITIAL_CATEGORIES.forEach((cat) => {
         const newRef = doc(collection(db, "categories"));
-        batch.set(newRef, { ...cat, id: newRef.id, userId });
+        batch.set(newRef, stripUndefined({ ...cat, id: newRef.id, userId }));
       });
 
       await batch.commit();
@@ -139,7 +156,15 @@ export const initializeDataIfNeeded = async () => {
 
       INITIAL_ACCOUNTS.forEach((acc) => {
         const newRef = doc(collection(db, "accounts"));
-        batch.set(newRef, { ...acc, id: newRef.id, userId });
+        batch.set(
+          newRef,
+          stripUndefined({
+            ...acc,
+            id: newRef.id,
+            userId,
+            balance: toNumber((acc as any).balance, 0),
+          })
+        );
       });
 
       await batch.commit();
@@ -183,14 +208,14 @@ export const addTransaction = async (transaction: Transaction) => {
     const userId = getCurrentUserId();
 
     const txId = ensureId(transaction.id);
-    const payload: any = {
+    const payload: any = stripUndefined({
       ...transaction,
       id: txId,
       userId,
       value: toNumber((transaction as any).value, 0),
       date: toStringSafe((transaction as any).date, new Date().toISOString()),
       isPaid: Boolean((transaction as any).isPaid),
-    };
+    });
 
     await setDoc(doc(db, "transactions", txId), payload);
 
@@ -210,7 +235,7 @@ export const addTransaction = async (transaction: Transaction) => {
         else newBalance -= payload.value;
       }
 
-      await updateDoc(accountRef, { balance: newBalance });
+      await updateDoc(accountRef, stripUndefined({ balance: newBalance }));
     }
   } catch (error) {
     console.error("Erro ao adicionar transação:", error);
@@ -225,13 +250,15 @@ export const updateTransaction = async (updatedTx: Transaction) => {
     // garante que a transação pertence ao user (rules friendly)
     await assertOwner("transactions", updatedTx.id, userId);
 
-    await setDoc(doc(db, "transactions", updatedTx.id), {
+    const payload = stripUndefined({
       ...updatedTx,
       userId,
       value: toNumber((updatedTx as any).value, 0),
       date: toStringSafe((updatedTx as any).date),
       isPaid: Boolean((updatedTx as any).isPaid),
     });
+
+    await setDoc(doc(db, "transactions", updatedTx.id), payload);
   } catch (error) {
     console.error("Erro ao atualizar transação:", error);
     throw error;
@@ -261,7 +288,7 @@ export const deleteTransaction = async (id: string) => {
         else newBalance += value;
       }
 
-      await updateDoc(accountRef, { balance: newBalance });
+      await updateDoc(accountRef, stripUndefined({ balance: newBalance }));
     }
 
     await deleteDoc(txRef);
@@ -274,7 +301,11 @@ export const deleteTransaction = async (id: string) => {
 export const addRecurringTransaction = async (recurring: RecurringTransaction) => {
   const userId = getCurrentUserId();
   const recId = ensureId(recurring.id);
-  await setDoc(doc(db, "recurring_transactions", recId), { ...recurring, id: recId, userId });
+
+  await setDoc(
+    doc(db, "recurring_transactions", recId),
+    stripUndefined({ ...recurring, id: recId, userId })
+  );
 };
 
 // ==========================================
@@ -310,17 +341,34 @@ export const addAccount = async (account: Account) => {
 
   if (shouldGenerateId) {
     const newRef = doc(collection(db, "accounts"));
-    const payload = { ...account, id: newRef.id, userId, balance: toNumber((account as any).balance, 0) };
+
+    const payload = stripUndefined({
+      ...account,
+      id: newRef.id,
+      userId,
+      balance: toNumber((account as any).balance, 0),
+      // ⚠️ se for conta que não é cartão, esses campos podem vir undefined e serão removidos
+      closingDay: (account as any).closingDay,
+      dueDay: (account as any).dueDay,
+      limit: (account as any).limit,
+    });
+
     await setDoc(newRef, payload);
     return;
   }
 
-  await setDoc(doc(db, "accounts", account.id), {
-    ...account,
-    id: account.id,
-    userId,
-    balance: toNumber((account as any).balance, 0),
-  });
+  await setDoc(
+    doc(db, "accounts", account.id),
+    stripUndefined({
+      ...account,
+      id: account.id,
+      userId,
+      balance: toNumber((account as any).balance, 0),
+      closingDay: (account as any).closingDay,
+      dueDay: (account as any).dueDay,
+      limit: (account as any).limit,
+    })
+  );
 };
 
 export const updateAccount = async (account: Account) => {
@@ -341,22 +389,36 @@ export const updateAccount = async (account: Account) => {
         }
       }
 
-      await setDoc(accRef, {
-        ...account,
-        id: account.id,
-        userId,
-        balance: toNumber((account as any).balance, 0),
-      });
+      // ✅ merge evita apagar campos antigos
+      await setDoc(
+        accRef,
+        stripUndefined({
+          ...account,
+          id: account.id,
+          userId,
+          balance: toNumber((account as any).balance, 0),
+          closingDay: (account as any).closingDay,
+          dueDay: (account as any).dueDay,
+          limit: (account as any).limit,
+        }),
+        { merge: true }
+      );
       return;
     }
 
     const newRef = doc(collection(db, "accounts"));
-    await setDoc(newRef, {
-      ...account,
-      id: newRef.id,
-      userId,
-      balance: toNumber((account as any).balance, 0),
-    });
+    await setDoc(
+      newRef,
+      stripUndefined({
+        ...account,
+        id: newRef.id,
+        userId,
+        balance: toNumber((account as any).balance, 0),
+        closingDay: (account as any).closingDay,
+        dueDay: (account as any).dueDay,
+        limit: (account as any).limit,
+      })
+    );
   } catch (error) {
     console.error("Erro ao salvar conta:", error);
     throw error;
@@ -393,13 +455,16 @@ export const saveCategory = async (category: Category) => {
   const userId = getCurrentUserId();
   const catId = ensureId(category.id);
 
-  await setDoc(doc(db, "categories", catId), { ...category, id: catId, userId });
+  await setDoc(
+    doc(db, "categories", catId),
+    stripUndefined({ ...category, id: catId, userId })
+  );
 };
 
 export const updateCategoryBudget = async (categoryId: string, limit: number) => {
   const userId = getCurrentUserId();
   const { ref } = await assertOwner("categories", categoryId, userId);
-  await updateDoc(ref, { budgetLimit: toNumber(limit, 0) });
+  await updateDoc(ref, stripUndefined({ budgetLimit: toNumber(limit, 0) }));
 };
 
 export const suggestCategory = async (description: string): Promise<string> => {
@@ -452,7 +517,7 @@ export const getGoals = async (): Promise<Goal[]> => {
 export const addGoal = async (goal: Goal) => {
   const userId = getCurrentUserId();
   const goalId = ensureId(goal.id);
-  await setDoc(doc(db, "goals", goalId), { ...goal, id: goalId, userId });
+  await setDoc(doc(db, "goals", goalId), stripUndefined({ ...goal, id: goalId, userId }));
 };
 
 export const updateGoalBalance = async (goalId: string, amount: number) => {
@@ -474,10 +539,13 @@ export const updateGoalBalance = async (goalId: string, amount: number) => {
     amount: add,
   });
 
-  await updateDoc(ref, {
-    currentAmount: current + add,
-    history,
-  });
+  await updateDoc(
+    ref,
+    stripUndefined({
+      currentAmount: current + add,
+      history,
+    })
+  );
 };
 
 // ==========================================
@@ -632,10 +700,13 @@ export const processRecurringTransactions = async () => {
         // garanta que update bate nas rules (doc pertence ao user)
         await assertOwner("recurring_transactions", docSnap.id, userId);
 
-        await updateDoc(doc(db, "recurring_transactions", docSnap.id), {
-          nextDueDate: nextDueDate.toISOString(),
-          lastGeneratedDate: new Date().toISOString(),
-        });
+        await updateDoc(
+          doc(db, "recurring_transactions", docSnap.id),
+          stripUndefined({
+            nextDueDate: nextDueDate.toISOString(),
+            lastGeneratedDate: new Date().toISOString(),
+          })
+        );
       }
     }
   } catch {
