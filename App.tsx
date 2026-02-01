@@ -30,13 +30,21 @@ const App: React.FC = () => {
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
       setUser(currentUser);
-      if (currentUser) {
-        await initializeDataIfNeeded();
-        await processRecurringTransactions();
-        setRefreshKey(prev => prev + 1);
+
+      // Mantém o app resiliente: se der erro no bootstrap (rules/rede), não "trava" o app.
+      try {
+        if (currentUser) {
+          await initializeDataIfNeeded();
+          await processRecurringTransactions();
+          setRefreshKey((prev) => prev + 1);
+        }
+      } catch (err) {
+        console.error('Erro no bootstrap do usuário (init/recorrentes):', err);
+      } finally {
+        setAuthLoading(false);
       }
-      setAuthLoading(false);
     });
+
     return () => unsubscribe();
   }, []);
 
@@ -53,35 +61,35 @@ const App: React.FC = () => {
   };
 
   const renderView = () => {
-    switch(currentView) {
-      case 'dashboard': 
+    switch (currentView) {
+      case 'dashboard':
         return (
-          <Dashboard 
-            onEditTransaction={handleEditTransaction} 
-            refreshKey={refreshKey} 
-            onNavigate={setCurrentView} 
+          <Dashboard
+            onEditTransaction={handleEditTransaction}
+            refreshKey={refreshKey}
+            onNavigate={setCurrentView}
           />
         );
-      case 'transactions': 
+      case 'transactions':
         return <TransactionsView onEditTransaction={handleEditTransaction} />;
       case 'incomes':
         return <IncomesView onEditTransaction={handleEditTransaction} />;
-      case 'expenses': 
+      case 'expenses':
         return <ExpensesView onEditTransaction={handleEditTransaction} />;
-      case 'accounts': 
+      case 'accounts':
         return <AccountsView />;
-      case 'budgets': 
+      case 'budgets':
         return <BudgetsView />;
-      case 'reports': 
+      case 'reports':
         return <ReportsView />;
-      case 'goals': 
+      case 'goals':
         return <GoalsView />;
-      default: 
+      default:
         return (
-          <Dashboard 
-            onEditTransaction={handleEditTransaction} 
-            refreshKey={refreshKey} 
-            onNavigate={setCurrentView} 
+          <Dashboard
+            onEditTransaction={handleEditTransaction}
+            refreshKey={refreshKey}
+            onNavigate={setCurrentView}
           />
         );
     }
@@ -123,6 +131,7 @@ const App: React.FC = () => {
               onClick={() => setIsMobileMenuOpen(true)}
               className="p-2 border border-emerald-100 rounded-lg text-emerald-600 hover:bg-emerald-50 active:scale-95 transition-all"
               aria-label="Abrir menu principal"
+              title="Abrir menu"
             >
               <Menu size={20} />
             </button>
@@ -137,6 +146,8 @@ const App: React.FC = () => {
           <button
             onClick={handleLogout}
             className="flex items-center space-x-1 text-xs font-semibold text-red-500 border border-red-100 px-3 py-1.5 rounded-xl hover:bg-red-50 active:scale-95 transition-all"
+            title="Sair"
+            aria-label="Sair"
           >
             <LogOut size={14} />
             <span>Sair</span>
@@ -153,6 +164,7 @@ const App: React.FC = () => {
           onClick={handleNewTransaction}
           className="fixed bottom-6 right-6 md:bottom-8 md:right-8 z-40 bg-emerald-600 hover:bg-emerald-700 text-white rounded-full w-14 h-14 flex items-center justify-center shadow-xl shadow-emerald-400/40 active:scale-95 transition-all"
           aria-label="Adicionar nova transação"
+          title="Nova transação"
         >
           <Plus size={24} />
         </button>
@@ -175,7 +187,7 @@ const App: React.FC = () => {
                 onClose={() => setIsFormOpen(false)}
                 onSuccess={() => {
                   setIsFormOpen(false);
-                  setRefreshKey(old => old + 1);
+                  setRefreshKey((old) => old + 1);
                 }}
                 initialData={transactionToEdit}
               />
@@ -187,4 +199,4 @@ const App: React.FC = () => {
   );
 };
 
-export default App; 
+export default App;
